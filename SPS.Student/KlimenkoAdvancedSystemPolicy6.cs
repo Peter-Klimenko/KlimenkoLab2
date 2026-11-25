@@ -319,7 +319,7 @@ public sealed class KlimenkoAdvancedSystemPolicy6 : ISystemPolicy
         private readonly object sync = new();
 
         private const int DefaultMaxAttempts = 3;
-        private const double MinTimeoutMs = 200.0;
+        private const double MinTimeoutMs = 300.0;
         private const double MaxTimeoutMs = 60000.0;
 
         private double emaDurationMs = 350.0;
