@@ -5,10 +5,7 @@ using SPS.Abstractions;
 
 namespace SPS.Student;
 
-/// <summary>
-/// Адаптивная стратегия для Service Profit Simulator (v6, на базе контрольной v2).
-/// Все решения основаны только на данных, доступных через SPS.Abstractions.
-/// </summary>
+
 public sealed class KlimenkoAdvancedSystemPolicy6 : ISystemPolicy
 {
     public IRequestPolicy RpcPolicy { get; } = new AdaptiveRequestPolicy();
@@ -17,7 +14,7 @@ public sealed class KlimenkoAdvancedSystemPolicy6 : ISystemPolicy
 
     // Сохраняем увеличенную мощность после всплеска нагрузки, чтобы не запускать
     // и останавливать платные экземпляры каждую секунду.
-    private int workerTarget = 4;
+    private int workerTarget = 5;
     private TimeSpan? lowLoadSince;
 
     // Реальная LRU-история чтения кэша. SourceObservedAt не равен времени
@@ -27,8 +24,6 @@ public sealed class KlimenkoAdvancedSystemPolicy6 : ISystemPolicy
 
     public TimeSpan? GetProcessingBudget(RequestInfo request, Random random)
     {
-        // Не ограничиваем Generate слишком коротким бюджетом:
-        // в открытом сценарии терпение клиента существенно больше времени расчёта.
         return request.Kind switch
         {
             RequestKind.Metadata => TimeSpan.FromSeconds(2.0),
@@ -90,7 +85,6 @@ public sealed class KlimenkoAdvancedSystemPolicy6 : ISystemPolicy
         if (lastProbe != null && lastProbe.Outcome == RequestOutcome.Success)
             return EndpointDecision.Allow();
 
-        // После неудачной проверки повторяем probe, не открывая обычный трафик.
         if (lastProbe != null && lastProbe.Outcome != RequestOutcome.Success)
             return EndpointDecision.Probe();
 
@@ -126,9 +120,6 @@ public sealed class KlimenkoAdvancedSystemPolicy6 : ISystemPolicy
             return CacheReadDecision.ServeCached();
         }
 
-        // Объединяем одинаковые параллельные загрузки: один поход к источнику
-        // обслужит всех ожидающих клиентов. Свежесть проверит движок отдельно
-        // для каждого клиента при доставке результата.
         var pending = context.PendingFetches
             .Where(f => f.Key == context.Request.ResourceKey)
             .OrderBy(f => f.StartedAt)
@@ -155,9 +146,6 @@ public sealed class KlimenkoAdvancedSystemPolicy6 : ISystemPolicy
 
         var evictions = new List<string>();
 
-        // Вытесняем сначала уже истёкшие записи, затем действительно давно
-        // не использовавшиеся. В отличие от сортировки только по SourceObservedAt,
-        // это сохраняет горячие ключи, к которым часто обращаются без обновления источника.
         foreach (var oldEntry in context.Entries
                      .Where(e => e.Key != value.Key)
                      .OrderBy(e => e.ExpiresAt <= context.Now ? 0 : 1)
@@ -325,17 +313,14 @@ public sealed class KlimenkoAdvancedSystemPolicy6 : ISystemPolicy
         }
     }
 
-    /// <summary>
-    /// RPC-политика из Lab1: адаптивный timeout, ограниченные повторы,
-    /// экспоненциальный backoff и jitter.
-    /// </summary>
+  
     private sealed class AdaptiveRequestPolicy : IRequestPolicy
     {
         private readonly object sync = new();
 
         private const int DefaultMaxAttempts = 3;
         private const double MinTimeoutMs = 200.0;
-        private const double MaxTimeoutMs = 6000.0;
+        private const double MaxTimeoutMs = 60000.0;
 
         private double emaDurationMs = 350.0;
         private double emaDeviationMs = 100.0;
@@ -348,7 +333,7 @@ public sealed class KlimenkoAdvancedSystemPolicy6 : ISystemPolicy
                 double timeout = emaDurationMs + 2.2 * emaDeviationMs;
 
                 if (consecutiveTimeouts > 2)
-                    timeout *= 1.5;
+                    timeout *= 2.5;
 
                 return TimeSpan.FromMilliseconds(
                     Math.Clamp(timeout, MinTimeoutMs, MaxTimeoutMs));
@@ -393,7 +378,7 @@ public sealed class KlimenkoAdvancedSystemPolicy6 : ISystemPolicy
                 delayMs *= Math.Pow(2.5, Math.Max(0, observation.Attempt - 1));
 
                 if (consecutiveTimeouts > 3)
-                    delayMs *= 2.0;
+                    delayMs *= 5.0;
 
                 double jitter = 0.5 + random.NextDouble() * 1.5;
                 delayMs = Math.Clamp(delayMs * jitter, 100.0, 5000.0);
