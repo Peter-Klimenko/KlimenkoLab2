@@ -252,12 +252,12 @@ public sealed class KlimenkoAdvancedSystemPolicy6 : ISystemPolicy
         }
         else if (inFlightJobs >= 6)
         {
-            workerTarget = Math.Max(workerTarget, Math.Min(6, settings.MaximumWorkers));
+            workerTarget = Math.Max(workerTarget, Math.Min(7, settings.MaximumWorkers));
             lowLoadSince = null;
         }
         else if (inFlightJobs >= 3)
         {
-            workerTarget = Math.Max(workerTarget, Math.Min(5, settings.MaximumWorkers));
+            workerTarget = Math.Max(workerTarget, Math.Min(6, settings.MaximumWorkers));
             lowLoadSince = null;
         }
         else if (inFlightJobs <= 2)
